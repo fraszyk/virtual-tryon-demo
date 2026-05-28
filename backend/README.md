@@ -1,6 +1,6 @@
 # Virtual Try-On Demo
 
-AI-powered virtual try-on using **FLUX Fill Pro** masked inpainting + **MediaPipe** body landmark detection. Upload a person photo and one or more garment images — only the clothing region changes; face, pose, and background are preserved pixel-for-pixel.
+AI-powered virtual try-on using **FLUX.2 Pro** masked inpainting + **GPT-5.4 mini** garment classification + **MediaPipe** body landmark detection. Upload a person photo and one or more garment images — only the clothing region changes; face, pose, and background are preserved pixel-for-pixel.
 
 ---
 
@@ -10,7 +10,7 @@ AI-powered virtual try-on using **FLUX Fill Pro** masked inpainting + **MediaPip
 
 ```
 Person photo  ──┐
-                ├──► GPT-4o mini (garment classifier) ──► garment type + description
+                ├──► GPT-5.4 mini (garment classifier) ──► garment type + description
 Garment photo ──┘
                         │
                         ▼
@@ -82,8 +82,8 @@ Do not change facial features or body proportions.
 
 - Python 3.10+ (`py -3`)
 - Azure AI Foundry account with these models deployed:
-  - **FLUX Fill Pro** (`flux-pro-v1.1-fill`) — for inpainting ← **required**
-  - **GPT-4o mini** (`gpt-4o-mini`) — for garment classification
+  - **FLUX.2 Pro** (`flux-pro-v1.1-fill`) — for inpainting ← **required**
+  - **GPT-5.4 mini** (`gpt-5.4-mini`) — for garment classification
 
 ### Install & run
 
@@ -99,8 +99,8 @@ The script creates a `.venv`, installs dependencies, and starts Flask on `http:/
 ```env
 AZURE_BASE_URL=https://<your-resource>.services.ai.azure.com/openai/v1
 AZURE_API_KEY=<your-key>
-AZURE_FLUX_FILL_MODEL=flux-pro-v1.1-fill   # FLUX Fill Pro deployment name
-AZURE_VISION_MODEL=gpt-4o-mini             # GPT-4o mini deployment name
+AZURE_FLUX_FILL_MODEL=flux-pro-v1.1-fill   # FLUX.2 Pro deployment name
+AZURE_VISION_MODEL=gpt-5.4-mini            # GPT-5.4 mini deployment name
 AZURE_FLUX_MODEL=FLUX.1-Kontext-pro        # (unused for try-on, kept for reference)
 ```
 

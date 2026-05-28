@@ -4,8 +4,14 @@ A simple demo that uses AI to generate a virtual try-on image: upload a photo
 of a person and one or more clothing items, and the app produces a composite
 image of the same person wearing those clothes.
 
-Powered by **Black Forest Labs FLUX.2 Pro on Azure AI Foundry**, using the
-model's `input_images` reference-image feature.
+Powered by **FLUX.2 Pro** (inpainting) and **GPT-5.4 mini** (garment classification) on **Azure AI Foundry**, using masked inpainting via MediaPipe body landmark detection.
+
+## How it works
+
+1. **GPT-5.4 mini** classifies the uploaded garment image (type + description)
+2. **MediaPipe** detects body landmarks to generate a precise binary mask (white = inpaint, black = preserve)
+3. **FLUX.2 Pro** (FLUX Fill) inpaints only the masked region — face, pose and background are preserved pixel-for-pixel
+4. For multiple garments, inpainting is applied sequentially on the same canvas
 
 ## Project Structure
 
@@ -13,50 +19,55 @@ model's `input_images` reference-image feature.
 virtual-tryon-demo/
 ├── backend/
 │   ├── src/
-│   │   ├── app.py                  # Flask app + serves the demo UI
-│   │   ├── index.html              # Simple drag-and-drop UI
-│   │   ├── api/routes.py           # POST /api/tryon
-│   │   ├── services/tryon_service.py  # OpenAI image-edit integration
+│   │   ├── app.py                          # Flask app + serves the UI
+│   │   ├── index.html                      # Drag-and-drop UI
+│   │   ├── api/routes.py                   # POST /api/tryon, POST /api/mask-preview
+│   │   ├── services/
+│   │   │   ├── inpaint_service.py          # FLUX.2 Pro inpainting
+│   │   │   ├── vision_service.py           # GPT-5.4 mini garment classification
+│   │   │   └── mask_builder.py             # MediaPipe → binary mask
 │   │   ├── models/schemas.py
 │   │   └── core/config.py
 │   ├── requirements.txt
+│   ├── run.bat                             # One-click start (Windows)
 │   └── .env.example
-└── frontend/                       # Optional React frontend (not required)
+└── frontend/                               # Optional React frontend (not required)
 ```
 
 ## Quick Start
 
-### 1. Install backend dependencies
+### 1. Configure Azure AI Foundry
 
-```bash
+Deploy the following models in [Azure AI Foundry](https://ai.azure.com):
+
+| Model | Purpose | Env var |
+|-------|---------|---------|
+| **FLUX.2 Pro** (`flux-pro-v1.1-fill`) | Inpainting | `AZURE_FLUX_FILL_MODEL` |
+| **GPT-5.4 mini** | Garment classification | `AZURE_VISION_MODEL` |
+
+### 2. Set up environment
+
+```bat
 cd backend
-python -m venv .venv
-.venv\Scripts\activate            # Windows
-# source .venv/bin/activate       # macOS / Linux
-pip install -r requirements.txt
-```
-
-### 2. Configure your Azure AI Foundry deployment
-
-```bash
-copy .env.example .env            # Windows
-# cp .env.example .env            # macOS / Linux
+copy .env.example .env
 ```
 
 Edit `.env`:
 
-```
-AZURE_FLUX_ENDPOINT=https://<your-resource>.services.ai.azure.com/providers/blackforestlabs/v1/flux-2-pro
-AZURE_FLUX_API_KEY=<your-foundry-api-key>
+```env
+AZURE_BASE_URL=https://<your-resource>.services.ai.azure.com/openai/v1
+AZURE_API_KEY=<your-foundry-api-key>
+AZURE_FLUX_FILL_MODEL=flux-pro-v1.1-fill
+AZURE_VISION_MODEL=gpt-5.4-mini
 ```
 
-> Get the endpoint URL and key from the FLUX.2 Pro deployment's **"Consume"** /
-> **"Keys and Endpoint"** page in Azure AI Foundry.
+> Get the base URL and key from **Keys and Endpoint** page of your Azure AI Foundry resource.
 
 ### 3. Run
 
-```bash
-python src/app.py
+```bat
+cd backend
+run.bat
 ```
 
 Open <http://localhost:5000> in your browser.
@@ -66,28 +77,30 @@ Open <http://localhost:5000> in your browser.
 1. Drop a photo of a person into the **Person photo** area.
 2. Drop one or more clothing item images into **Clothing items**.
 3. (Optional) Add styling notes (e.g. *"tuck the shirt in, outdoor setting"*).
-4. Choose how many variations to generate (1–4).
-5. Click **Generate Try-On**. Generated images appear on the right and are also
-   saved into the `backend/results/` folder.
+4. Click **🎭 Mask** to preview the inpaint region before generating.
+5. Click **Generate Try-On**. Results appear on the right and are saved to `backend/results/`.
 
 ## API
 
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/tryon` | Generate try-on |
+| `POST` | `/api/mask-preview` | Preview mask overlay (debug) |
+| `GET`  | `/api/health` | Health check |
+
 `POST /api/tryon` — `multipart/form-data`
 
-| Field      | Type            | Notes                                        |
-|------------|-----------------|----------------------------------------------|
-| `person`   | file (image)    | Required. Photo of the person.               |
-| `garments` | file(s) (image) | Required. One or more clothing item images.  |
-| `notes`    | string          | Optional styling notes.                      |
-| `n`        | integer 1–4     | Optional. Number of variations (default 1).  |
+| Field      | Type            | Notes                                       |
+|------------|-----------------|---------------------------------------------|
+| `person`   | file (image)    | Required. Photo of the person.              |
+| `garments` | file(s) (image) | Required. One or more clothing item images. |
+| `notes`    | string          | Optional styling notes.                     |
+| `n`        | integer 1–4     | Number of variations (default 1).           |
 
 Response: `{ "images": ["data:image/png;base64,..."] }`
 
 ## Notes
 
-- The model preserves the person's face, body, and pose while replacing the
-  outfit. Quality depends on the clarity of input photos.
-- FLUX.2 Pro on Azure AI Foundry is billed per image — see your Foundry
-  deployment page for current pricing.
-- The optional React frontend in `frontend/` is not needed to run the demo —
-  the backend serves a self-contained HTML/JS UI.
+- FLUX.2 Pro preserves identity, face, pose and background — only the masked clothing region is changed.
+- FLUX.2 Pro and GPT-5.4 mini on Azure AI Foundry are billed per use — see your Foundry deployment page for pricing.
+- The React frontend in `frontend/` is optional — the backend serves a self-contained HTML/JS UI.
