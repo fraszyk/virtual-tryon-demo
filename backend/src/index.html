@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Virtual Try-On Demo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --line: #334155;
+    --text: #e2e8f0; --muted: #94a3b8; --accent: #6366f1; --accent-hover:#4f46e5;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+         background: var(--bg); color: var(--text); }
+  header { padding: 24px 32px; border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0; font-size: 22px; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+  main { display: grid; grid-template-columns: 400px 1fr; gap: 24px; padding: 24px 32px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line);
+           border-radius: 12px; padding: 20px; }
+  label { display:block; font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
+  .drop { border: 2px dashed var(--line); border-radius: 10px;
+          padding: 16px; text-align:center; cursor:pointer; transition: .15s;
+          min-height: 120px; display:flex; align-items:center; justify-content:center;
+          flex-direction:column; gap:8px; }
+  .drop.hover { border-color: var(--accent); background: rgba(99,102,241,.08); }
+  .drop img { max-height: 120px; max-width: 100%; border-radius: 6px; }
+  .thumbs { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  .thumbs img { height:64px; width:64px; object-fit:cover; border-radius:6px;
+                border:1px solid var(--line); }
+  textarea, input[type="number"] { width:100%; background: #0b1220; color: var(--text);
+            border:1px solid var(--line); border-radius:8px; padding:10px; font: inherit; }
+  .btn-row { display:flex; gap:8px; margin-top:16px; }
+  button { flex:1; padding:12px 16px; border:0; border-radius:10px;
+           background: var(--accent); color:#fff; font-weight:600; cursor:pointer;
+           font-size: 15px; }
+  button.secondary { background: #334155; flex: 0 0 auto; padding: 12px 14px; font-size: 13px; }
+  button:hover:not(:disabled) { background: var(--accent-hover); }
+  button.secondary:hover:not(:disabled) { background: #475569; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .gallery { display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+             gap:16px; }
+  .gallery .result-card { position: relative; }
+  .gallery .result-card img { width:100%; border-radius:10px; border:1px solid var(--line); display:block; }
+  .gallery .result-card .mask-layer { position:absolute; top:0; left:0; width:100%; height:100%;
+             border-radius:10px; display:none; }
+  .gallery .result-card .mask-layer.visible { display:block; }
+  .empty { color: var(--muted); padding: 40px; text-align:center; }
+  .err { color: #fca5a5; margin-top: 12px; font-size: 13px; }
+  .info { color: var(--muted); margin-top: 8px; font-size: 12px; }
+  .spinner { display:inline-block; width:16px; height:16px; border:2px solid #fff;
+             border-top-color: transparent; border-radius:50%;
+             animation: spin .8s linear infinite; vertical-align:middle; margin-right:8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  input[type=file] { display:none; }
+  .mask-toggle { display:flex; align-items:center; gap:8px; margin-bottom:12px;
+                 font-size:13px; color:var(--muted); cursor:pointer; user-select:none; }
+  .mask-toggle input { cursor:pointer; accent-color: var(--accent); }
+  #maskPreviewSection { margin-top: 16px; display:none; }
+  #maskPreviewSection img { width:100%; border-radius:10px; border:1px solid var(--line); }
+  #maskPreviewSection h3 { font-size:13px; color:var(--muted); margin:0 0 8px; }
+
+  /* Lightbox */
+  .result-card img { cursor: zoom-in; transition: opacity .15s; }
+  .result-card img:hover { opacity: .88; }
+  #lightbox { display:none; position:fixed; inset:0; z-index:999;
+              background: rgba(0,0,0,.85); align-items:center; justify-content:center; }
+  #lightbox.open { display:flex; }
+  #lightbox img { max-width: 92vw; max-height: 92vh; border-radius:12px;
+                  box-shadow: 0 8px 48px rgba(0,0,0,.7); }
+  #lightbox button { position:fixed; top:20px; right:24px; background:none; border:none;
+                     color:#fff; font-size:32px; cursor:pointer; line-height:1;
+                     flex:0; padding:4px 10px; }
+  #lightbox button:hover { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>&#129710; Virtual Try-On Demo</h1>
+  <p>Upload a person photo + clothing items &mdash; AI places them via masked inpainting (face &amp; background never change).</p>
+</header>
+
+<div id="lightbox">
+  <button onclick="closeLightbox()" title="Close">&#x2715;</button>
+  <img id="lightboxImg" src="" alt="Full size preview" />
+</div>
+
+<main>
+  <form id="form" class="panel">
+    <label>Person photo</label>
+    <div class="drop" id="dropPerson">
+      <span id="personLabel">Click or drop a person image</span>
+      <img id="personPreview" hidden />
+    </div>
+    <input type="file" id="personFile" accept="image/*" />
+
+    <label>Clothing / accessory items (1 or more)</label>
+    <div class="drop" id="dropGarments">
+      <span>Click or drop one or more clothing images</span>
+      <div class="thumbs" id="garmentThumbs"></div>
+    </div>
+    <input type="file" id="garmentFiles" accept="image/*" multiple />
+
+    <label>Styling notes (optional)</label>
+    <textarea id="notes" rows="2"
+      placeholder="e.g. tucked in, outdoor light, casual style"></textarea>
+
+    <label>Variations (1&ndash;4)</label>
+    <input type="number" id="n" min="1" max="4" value="1" />
+
+    <label for="strength" style="margin-top:8px">
+      Image fidelity <span id="strengthVal" style="opacity:.75">0.92</span>
+      <small style="display:block; opacity:.6; font-weight:normal; margin-top:2px">
+        Higher = stay closer to the original person/pose. Lower = let AI restyle more freely.
+      </small>
+    </label>
+    <input type="range" id="strength" min="0.5" max="1.0" step="0.01" value="0.92"
+      style="width:100%" />
+
+    <div class="btn-row">
+      <button type="submit" id="submit">Generate Try-On</button>
+      <button type="button" id="maskBtn" class="secondary" title="Preview mask overlay (debug)">&#127917; Mask</button>
+      <button type="button" id="clearBtn" class="secondary" title="Clear all and start over">&#128465;</button>
+    </div>
+    <div class="err" id="err"></div>
+    <div class="info" id="info"></div>
+
+    <div id="maskPreviewSection">
+      <h3>Mask overlay &mdash; white = inpaint region, black = preserved</h3>
+      <img id="maskPreviewImg" alt="mask overlay" />
+    </div>
+  </form>
+
+  <section class="panel">
+    <label class="mask-toggle" id="maskToggleRow" style="display:none">
+      <input type="checkbox" id="maskToggle" /> Show mask overlay on results
+    </label>
+    <div id="results" class="gallery"></div>
+    <div id="empty" class="empty">Your generated try-on images will appear here.</div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let personFile = null;
+let garmentList = [];
+
+function wireDrop(dropEl, inputEl, onFiles) {
+  dropEl.addEventListener("click", () => inputEl.click());
+  ["dragenter","dragover"].forEach(ev =>
+    dropEl.addEventListener(ev, e => { e.preventDefault(); dropEl.classList.add("hover"); }));
+  ["dragleave","drop"].forEach(ev =>
+    dropEl.addEventListener(ev, e => { e.preventDefault(); dropEl.classList.remove("hover"); }));
+  dropEl.addEventListener("drop", e => onFiles([...e.dataTransfer.files]));
+  inputEl.addEventListener("change", e => onFiles([...e.target.files]));
+}
+
+wireDrop($("dropPerson"), $("personFile"), (files) => {
+  if (!files.length) return;
+  personFile = files[0];
+  const url = URL.createObjectURL(personFile);
+  $("personPreview").src = url;
+  $("personPreview").hidden = false;
+  $("personLabel").hidden = true;
+});
+
+wireDrop($("dropGarments"), $("garmentFiles"), (files) => {
+  garmentList = garmentList.concat(files);
+  const box = $("garmentThumbs");
+  for (const f of files) {
+    const img = document.createElement("img");
+    img.src = URL.createObjectURL(f);
+    box.appendChild(img);
+  }
+});
+
+// Live strength label
+$("strength").addEventListener("input", (e) => {
+  $("strengthVal").textContent = parseFloat(e.target.value).toFixed(2);
+});
+
+// Generate try-on
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("err").textContent = "";
+  $("info").textContent = "";
+  if (!personFile) { $("err").textContent = "Please add a person photo."; return; }
+  if (!garmentList.length) { $("err").textContent = "Please add at least one clothing image."; return; }
+
+  const btn = $("submit");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Generating\u2026';
+
+  const fd = new FormData();
+  fd.append("person", personFile);
+  for (const g of garmentList) fd.append("garments", g);
+  fd.append("notes", $("notes").value);
+  fd.append("n", $("n").value || "1");
+  fd.append("strength", $("strength").value || "0.92");
+
+  try {
+    const res = await fetch("/api/tryon", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Request failed");
+
+    const gallery = $("results");
+    gallery.innerHTML = "";
+    $("empty").hidden = true;
+    $("maskToggleRow").style.display = "flex";
+    $("maskToggle").checked = false;
+
+    for (const b64 of data.images) {
+      const card = document.createElement("div");
+      card.className = "result-card";
+      const img = document.createElement("img");
+      img.src = "data:image/png;base64," + b64;
+      img.addEventListener("click", () => openLightbox(img.src));
+      card.appendChild(img);
+      gallery.appendChild(card);
+    }
+    $("info").textContent = "\u2713 " + data.images.length + " result(s) generated.";
+  } catch (err) {
+    $("err").textContent = err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Generate Try-On";
+  }
+});
+
+// Mask preview (debug)
+$("maskBtn").addEventListener("click", async () => {
+  $("err").textContent = "";
+  if (!personFile) { $("err").textContent = "Please add a person photo first."; return; }
+  if (!garmentList.length) { $("err").textContent = "Please add at least one clothing image first."; return; }
+
+  $("maskBtn").disabled = true;
+  $("maskBtn").innerHTML = '<span class="spinner"></span>';
+
+  const fd = new FormData();
+  fd.append("person", personFile);
+  fd.append("garments", garmentList[0]);
+
+  try {
+    const res = await fetch("/api/mask-preview", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Mask preview failed");
+    $("maskPreviewImg").src = "data:image/png;base64," + data.mask_overlay;
+    $("maskPreviewSection").style.display = "block";
+  } catch (err) {
+    $("err").textContent = err.message;
+  } finally {
+    $("maskBtn").disabled = false;
+    $("maskBtn").textContent = "\uD83C\uDFAD Mask";
+  }
+});
+
+// Mask overlay toggle on results
+$("maskToggle").addEventListener("change", () => {
+  const show = $("maskToggle").checked;
+  document.querySelectorAll(".mask-layer").forEach(el => {
+    el.classList.toggle("visible", show);
+  });
+});
+
+// Clear all
+$("clearBtn").addEventListener("click", () => {
+  personFile = null;
+  garmentList = [];
+
+  // Reset person drop
+  $("personPreview").src = "";
+  $("personPreview").hidden = true;
+  $("personLabel").hidden = false;
+
+  // Reset garment thumbnails
+  $("garmentThumbs").innerHTML = "";
+
+  // Reset file inputs
+  $("personFile").value = "";
+  $("garmentFiles").value = "";
+
+  // Reset form fields
+  $("notes").value = "";
+  $("n").value = "1";
+  $("strength").value = "0.92";
+  $("strengthVal").textContent = "0.92";
+
+  // Clear results
+  $("results").innerHTML = "";
+  $("empty").hidden = false;
+  $("maskToggleRow").style.display = "none";
+  $("maskToggle").checked = false;
+
+  // Clear mask preview
+  $("maskPreviewSection").style.display = "none";
+  $("maskPreviewImg").src = "";
+
+  // Clear messages
+  $("err").textContent = "";
+  $("info").textContent = "";
+});
+function openLightbox(src) {
+  $("lightboxImg").src = src;
+  $("lightbox").classList.add("open");
+}
+function closeLightbox() {
+  $("lightbox").classList.remove("open");
+}
+$("lightbox").addEventListener("click", (e) => {
+  if (e.target === $("lightbox")) closeLightbox();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeLightbox();
+});
+</script>
+</body>
+</html>
